@@ -3,11 +3,23 @@ use std::fs;
 use std::io;
 
 fn main() {
-    let sm_1_10 = vec![85, 137, 229, 83, 87, 86, 129, 236, 44, 1, 0, 0, 139, 69, 8];
-    let sm_1_10_windows = vec![
-        85, 139, 236, 106, 255, 104, -1, -1, -1, -1, 100, 161, 0, 0, 0, 0, 80, 129, 236, 52, 1, 0,
-        0,
+    let signatures: Vec<Vec<i16>> = vec![
+        vec![85, 137, 229, 83, 87, 86, 129, 236, 44, 1, 0, 0, 139, 69, 8], // sm 1.10.0.6478
+        vec![
+            85, 83, 87, 86, 129, 236, 44, 1, 0, 0, 139, 132, 36, 64, 1, 0, 0, // sm 1.10.0.6455
+        ],
+        vec![
+            85, 139, 236, 106, 255, 104, -1, -1, -1, -1, 100, 161, 0, 0, 0, 0, 80, 129, 236, 52, 1,
+            0, 0, // windows sm 1.10
+        ],
     ];
+
+    let offsets: Vec<Vec<u8>> = vec![
+        vec![57, 15, 58, 132, 133],   // sm 1.10.0.6478
+        vec![51, 15, 52, 132, 133],   // sm 1.10.0.6455
+        vec![128, 117, 129, 19, 116], // windows sm 1.10
+    ];
+
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         print_start_message();
@@ -18,36 +30,43 @@ fn main() {
     let file_name = &args[1];
     let mut content = fs::read(file_name).expect("Файл не найден");
 
-    if file_name.ends_with(".dll") {
-        let idx = find_start_index(&content, sm_1_10_windows);
+    let mut find = false;
 
-        if idx == 0 || content[idx + 128] != 117 || content[idx + 129] != 19 {
-            if content[idx + 128] == 116 {
-                print_error_message("файл уже пропатчен.");
-            } else {
-                print_error_message("не найдена сигнатура, версия не поддерживается.");
-            }
-            io::stdin().read_line(&mut String::new()).unwrap();
-            return;
-        }
-        content[idx + 128] = 116;
-    } else {
-        let idx = find_start_index(&content, sm_1_10);
+    for (index, _) in signatures.iter().enumerate() {
+        let idx = find_start_index(&content, &signatures[index]);
 
-        if idx == 0 || content[idx + 57] != 15 || content[idx + 58] != 132 {
-            if content[idx + 58] == 133 {
+        if idx == 0
+            || content[idx + offsets[index][0] as usize] != offsets[index][1]
+            || content[idx + offsets[index][2] as usize] != offsets[index][3]
+        {
+            if content[idx + offsets[index][0] as usize] == offsets[index][4] {
                 print_error_message("файл уже пропатчен.");
-            } else {
-                print_error_message("не найдена сигнатура, версия не поддерживается.");
+                io::stdin().read_line(&mut String::new()).unwrap();
+                return;
             }
-            io::stdin().read_line(&mut String::new()).unwrap();
-            return;
+        } else {
+            println!(
+                "index: {}, value: {}, current: {}",
+                index,
+                offsets[index][4],
+                content[idx + offsets[index][2] as usize]
+            );
+            content[idx + offsets[index][2] as usize] = offsets[index][4];
+            find = true;
+            break;
         }
-        content[idx + 58] = 133;
+    }
+
+    if !find {
+        print_error_message(
+            "не найдена сигнатура, версия не поддерживается, напишите в дискорд: PainteR#0327",
+        );
+        io::stdin().read_line(&mut String::new()).unwrap();
+        return;
     }
 
     print_success_message();
-    let res = format!("{}{}", file_name, "_patched");
+    let res = format!("{}{}", file_name, "_patched.so");
     fs::write(res, content).unwrap();
     io::stdin().read_line(&mut String::new()).unwrap();
 }
@@ -82,7 +101,7 @@ fn print_error_message(msg: &str) {
     println!("Для продолжения нажмите любую клавишу...");
 }
 
-fn find_start_index(arr: &Vec<u8>, search: Vec<i16>) -> usize {
+fn find_start_index(arr: &Vec<u8>, search: &Vec<i16>) -> usize {
     let mut ti = 0;
     for i in 0..arr.len() {
         if search[ti] == -1 {
